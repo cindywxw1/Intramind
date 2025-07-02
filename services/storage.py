@@ -23,7 +23,6 @@ db = TiDBClient.connect(
     password=os.getenv("TIDB_PASSWORD", ""),
     database=os.getenv("TIDB_DATABASE", "test"),
 )
-cur = db.cursor()
 
 db.execute("DROP TABLE IF EXISTS chunks")
 
