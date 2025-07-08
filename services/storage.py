@@ -3,14 +3,12 @@ from typing import Optional, Any
 from sqlalchemy import Text
 
 import dotenv
-import openai, streamlit as st
-import litellm
+import openai
 from litellm import completion
-import numpy as np
 from pytidb import TiDBClient
 from pytidb.schema import TableModel, Field
 from pytidb.embeddings import EmbeddingFunction
-import PyPDF2, langchain_text_splitters
+import PyPDF2
 
 # prepare environment
 dotenv.load_dotenv(override=True)
