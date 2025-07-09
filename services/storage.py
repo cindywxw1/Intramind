@@ -40,8 +40,11 @@ class Chunk(TableModel, table=True):
     )
 
 # create table Chunk (our knowledge base) if it doesn't exist
-from pytidb.table import Table 
-table = Table(schema=Chunk, client=db, exist_ok=True) if db.query("SHOW TABLES LIKE 'chunks'") else db.create_table(schema=Chunk)
+from pytidb.table import Table
+if db.query("SHOW TABLES LIKE 'chunks'"):
+    table = db.create_table(schema=Chunk, mode="exist_ok")
+else:
+    table = db.create_table(schema=Chunk)
 
 sample_chunks = [
     "Llamas are camelids known for their soft fur and use as pack animals.",
@@ -107,8 +110,8 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
         return "I'm sorry. No relevant information was found."
 
 ## TO TEST DATABASE/TABLE CORRECTNESS
-# for i in range(1,table.rows()+1):
-#     print(table.get(i))
+for i in range(1,table.rows()+1):
+    print(table.get(i))
 
 ## TO TEST UPLOAD API CORRECTNESS
 # test_str = upload_file(0,"/Users/york/Desktop/Resume.pdf")
