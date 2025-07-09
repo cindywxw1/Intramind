@@ -1,0 +1,123 @@
+import os, io, json
+from typing import Optional, Any
+from sqlalchemy import Text
+
+import dotenv
+import openai, streamlit as st
+import litellm
+from litellm import completion
+import numpy as np
+from pytidb import TiDBClient
+from pytidb.schema import TableModel, Field
+from pytidb.embeddings import EmbeddingFunction
+import PyPDF2, langchain_text_splitters
+
+# prepare environment
+dotenv.load_dotenv(override=True)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# connect to tidb database
+db = TiDBClient.connect(
+    host=os.getenv("TIDB_HOST", "localhost"),
+    port=int(os.getenv("TIDB_PORT", "4000")),
+    username=os.getenv("TIDB_USERNAME", "root"),
+    password=os.getenv("TIDB_PASSWORD", ""),
+    database=os.getenv("TIDB_DATABASE", "test"),
+)
+
+# models we use
+text_embed = EmbeddingFunction("openai/text-embedding-3-small")
+llm_model = "gpt-4o-mini"
+
+# Define the Chunk table
+class Chunk(TableModel, table=True):
+    __tablename__ = "chunks"
+    __table_args__ = {"extend_existing": True}
+
+    id: int = Field(primary_key=True)
+    user_id: int| None = Field(nullable=True)  # user_id is allowed to be null for now
+    text: str = Field(sa_type=Text)
+    text_vec: Optional[Any] = text_embed.VectorField(
+        source_field="text",
+    )
+
+# create table Chunk (our knowledge base) if it doesn't exist
+from pytidb.table import Table 
+table = Table(schema=Chunk, client=db, exist_ok=True) if db.query("SHOW TABLES LIKE 'chunks'") else db.create_table(schema=Chunk)
+
+sample_chunks = [
+    "Llamas are camelids known for their soft fur and use as pack animals.",
+    "Python's GIL ensures only one thread executes bytecode at a time.",
+    "TiDB is a distributed SQL database for HTAP and AI workloads.",
+    "Einstein's theory of relativity revolutionized modern physics.",
+    "The Great Wall of China stretches over 13,000 miles.",
+]
+
+# insert sample chunks if it's initially blank 
+if table.rows() == 0:
+    chunks = [Chunk(user_id=0,text=t) for t in sample_chunks]
+    table.bulk_insert(chunks)
+
+# extract text from file (helper function): input a file path and return a text string
+def extract_text(file_path: str) -> str:
+    text=""
+    with open(file_path, 'rb') as file:
+        reader=PyPDF2.PdfReader(file)
+        for page_num in range(len(reader.pages)):
+            text += reader.pages[page_num].extract_text()
+        return text
+
+# an upload api that allows user to upload file (e.g.: in pdf format) and add its text to table Chunk, thus updating the knowledge base
+def upload_file(user_id: int, file: str) -> str:
+    text = extract_text(file)
+
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=100,
+    )
+
+    new_chunks=text_splitter.split_text(text)
+    rows = [Chunk(user_id=user_id,text=t) for t in new_chunks]
+    table.bulk_insert(rows)
+    return "Successful Upload!"
+
+# a chat api that allows users to ask a question about the knowledge base and get a more accurate answer by RAG-based AI chatbot
+def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
+    RAG_PROMPT_TEMPLATE = """Answer the question based on the following reference information.
+
+    Reference Information:
+    {context}
+
+    Question: {question}
+
+    Please answer:"""
+
+    res = table.search(str).limit(MAX_CONTEXT_CHUNKS)
+    if res:
+        text = [chunk.text for chunk in res.to_rows()]
+        context = "\n".join(text)
+        prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=str)
+
+        response = completion(
+            model=llm_model,
+            messages=[{"content": prompt, "role": "user"}],
+        )
+        res_str = response.choices[0].message.content
+        return res_str
+    else:
+        return "I'm sorry. No relevant information was found."
+
+## TO TEST DATABASE/TABLE CORRECTNESS
+# for i in range(1,table.rows()+1):
+#     print(table.get(i))
+
+## TO TEST UPLOAD API CORRECTNESS
+# test_str = upload_file(0,"/Users/york/Desktop/Resume.pdf")
+# print(test_str)
+# for i in range(1,table.rows()+1):
+#     print(table.get(i))
+
+## TO TEST CHAT API CORRECTNESS
+# result = chat(0,10,"What are the 3 caravan patents that Chenyang advanced?")
+# print(result)
