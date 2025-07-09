@@ -11,8 +11,8 @@ from storage import upload_file, chat
 load_dotenv()
 
 # --- Streamlit page setup ---
-st.set_page_config(page_title="Inframind", page_icon="💬")
-st.title("Inframind Chatbot")           
+st.set_page_config(page_title="Intramind", page_icon="💬")
+st.title("Intramind Chatbot")           
 
 # --- Session State Initialization ---
 if "chats" not in st.session_state:
