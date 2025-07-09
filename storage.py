@@ -3,14 +3,12 @@ from typing import Optional, Any
 from sqlalchemy import Text
 
 import dotenv
-import openai, streamlit as st
-import litellm
+import openai
 from litellm import completion
-import numpy as np
 from pytidb import TiDBClient
 from pytidb.schema import TableModel, Field
 from pytidb.embeddings import EmbeddingFunction
-import PyPDF2, langchain_text_splitters
+import PyPDF2
 
 # prepare environment
 dotenv.load_dotenv(override=True)
@@ -42,8 +40,11 @@ class Chunk(TableModel, table=True):
     )
 
 # create table Chunk (our knowledge base) if it doesn't exist
-from pytidb.table import Table 
-table = Table(schema=Chunk, client=db, exist_ok=True) if db.query("SHOW TABLES LIKE 'chunks'") else db.create_table(schema=Chunk)
+from pytidb.table import Table
+if db.query("SHOW TABLES LIKE 'chunks'"):
+    table = db.create_table(schema=Chunk, mode="exist_ok")
+else:
+    table = db.create_table(schema=Chunk)
 
 sample_chunks = [
     "Llamas are camelids known for their soft fur and use as pack animals.",
@@ -108,7 +109,7 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
     else:
         return "I'm sorry. No relevant information was found."
 
-## TO TEST DATABASE/TABLE CORRECTNESS
+# ## TO TEST DATABASE/TABLE CORRECTNESS
 # for i in range(1,table.rows()+1):
 #     print(table.get(i))
 
