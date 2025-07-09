@@ -110,8 +110,8 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
         return "I'm sorry. No relevant information was found."
 
 ## TO TEST DATABASE/TABLE CORRECTNESS
-for i in range(1,table.rows()+1):
-    print(table.get(i))
+# for i in range(1,table.rows()+1):
+#     print(table.get(i))
 
 ## TO TEST UPLOAD API CORRECTNESS
 # test_str = upload_file(0,"/Users/york/Desktop/Resume.pdf")
