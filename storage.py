@@ -1,6 +1,6 @@
 import os, io, json
-from typing import Optional, Any
-from sqlalchemy import Text
+from typing import Optional, Any, Tuple, List
+from sqlalchemy import Text, select
 
 import dotenv
 import openai
@@ -22,6 +22,7 @@ db = TiDBClient.connect(
     password=os.getenv("TIDB_PASSWORD", ""),
     database=os.getenv("TIDB_DATABASE", "test"),
 )
+_session=db.session
 
 # models we use
 text_embed = EmbeddingFunction("openai/text-embedding-3-small")
@@ -137,6 +138,7 @@ class ChatMessage(TableModel, table=True):
     id: int = Field(primary_key=True)
     chat_history_id: int = Field(
         foreign_key="chat_history.id",
+        ondelete="CASCADE",
         index=True
     )
     speaker_id: int
@@ -149,3 +151,95 @@ class Users(TableModel, table=True):
     id: int = Field(primary_key=True)
     username: str
     password: str
+
+# create new tables ChatHistory/ChatMessage if they didn't exist
+ch_table = db.create_table(schema=ChatHistory, mode="exist_ok")
+cm_table = db.create_table(schema=ChatMessage, mode="exist_ok")
+
+# API that reads user_id and creates a new session in table ChatHistory for the user. It returns the session_id of the new session just created and an int array of all session_ids of the user
+def create_session(user_id: int)->Tuple[int,List[int]]:
+    with _session() as s:
+        # Add & commit the new row
+        row = ChatHistory(user_id=user_id)
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+
+        # CLOSE any leftover cursor from previous DDL
+        s.connection().exec_driver_sql("")
+
+        # Run our own query and read *this* cursor
+        result = s.execute(
+            select(ChatHistory.id)
+            .where(ChatHistory.user_id == user_id)
+            .order_by(ChatHistory.id)
+        )
+        
+        # each r is a Row, r[0] = id
+        ids = [int(r[0]) for r in result]
+
+    return row.id, ids
+
+# API that appends a single chat message to the designated session; messages would be a JSON string like '{"role":"user","content":"Hello"}' or '{"role":"assistant","content":"Hi"}'
+def add_message(session_id: int, messages: str)->None:
+    try:
+        payload = json.loads(messages)
+    except json.JSONDecodeError as exc:
+        raise ValueError("messages must be valid JSON") from exc
+    
+    role = payload.get("role")
+    content = payload.get("content")
+    if role not in ("user", "assistant") or content is None:
+        raise ValueError(
+            "JSON must contain keys 'role' (user|assistant) and 'content'"
+        )
+    
+    speaker_id = 0 if role == "user" else 1
+    cm_table.insert(ChatMessage(chat_history_id=session_id,speaker_id=speaker_id,text=content))
+
+# API that shows chat history for a single chat session of a given user
+def show_history(user_id: int, session_id: int) -> str:
+    with _session() as s:
+        # CLOSE any leftover cursor from previous DDL
+        s.connection().exec_driver_sql("")
+
+        # Run our own query and read *this* cursor
+        result = s.execute(
+            select(ChatMessage)
+            .where(ChatMessage.chat_history_id == session_id)
+            .order_by(ChatMessage.id)
+        )
+        
+        # each r is a Row, r[0] = id
+        ele = [(r[0]) for r in result]
+
+        history = [
+        {
+            "role": "user" if m.speaker_id == 0 else "assistant",
+            "content": m.text
+        }
+        for m in ele
+        ]
+        
+    return json.dumps(history, ensure_ascii=False, indent=2)
+
+
+
+## CLEANING UP TABLES IF NEEDED
+# db.execute("DROP TABLE IF EXISTS chat_history")
+# db.execute("DROP TABLE IF EXISTS chat_message")
+
+
+## TESTS FOR FUNCTIONALITY CORRECTNESS
+
+# my_sessionID, my_arr = create_session(1)
+# print(my_sessionID)
+# print(my_arr)
+
+# add_message(1,'{"role":"assistant","content":"Hi"}')
+# result = cm_table.query(
+#     filters={"chat_history_id":1}
+# ).to_list()
+# print(result)
+
+# print(show_history(1,1))
