@@ -19,8 +19,8 @@ def serialize_chat(chat_id):
 
 
 # --- Streamlit page setup ---
-st.set_page_config(page_title="Inframind", page_icon="💬")
-st.title("Inframind Chatbot")           
+st.set_page_config(page_title="Intramind", page_icon="💬")
+st.title("Intramind Chatbot")           
 
 # --- Session State Initialization ---
 if "chats" not in st.session_state:
