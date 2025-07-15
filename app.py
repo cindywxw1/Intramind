@@ -10,6 +10,14 @@ from storage import upload_file, chat
 # Load environment variables
 load_dotenv()
 
+def serialize_chat(chat_id):
+    return {
+        "user_id": 0,
+        "chat_id": chat_id,
+        "messages": st.session_state.chats[chat_id]
+    }
+
+
 # --- Streamlit page setup ---
 st.set_page_config(page_title="Inframind", page_icon="💬")
 st.title("Inframind Chatbot")           
@@ -103,7 +111,6 @@ if user_input:
         st.session_state.chat_name_updated[current_chat_id] = True
         st.experimental_rerun()
 
-    # ✅ Use your backend RAG chat function
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             response = chat(user_id=0, MAX_CONTEXT_CHUNKS=10, str=user_input)
@@ -113,9 +120,3 @@ if user_input:
         "role": "assistant",
         "content": response
     })
-
-# --- Model Identity Box ---
-st.markdown("---")
-st.markdown("### 🤖 Personalized Knowledge Base")
-model_name = st.text_input("Your base's name", value=st.session_state.model_name)
-st.session_state.model_name = model_name
