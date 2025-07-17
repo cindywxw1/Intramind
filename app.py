@@ -141,13 +141,6 @@ for cid, name_ in st.session_state.chat_names.items():
         st.session_state.current_chat = cid
         break
 
-# --- Sidebar: Clear Chat Button ---
-if st.sidebar.button("🧹 Clear Current Chat"):
-    st.session_state.chats[st.session_state.current_chat] = []
-    st.session_state.uploaded_chat_files[st.session_state.current_chat] = None
-    st.session_state.chat_name_updated[st.session_state.current_chat] = False
-    st.session_state.chat_names[st.session_state.current_chat] = "🕓 New Chat"
-
 # --- Sidebar: Delete Chat Button ---
 if st.sidebar.button("🗑 Delete Current Chat"):
     current = st.session_state.current_chat
