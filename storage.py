@@ -223,8 +223,13 @@ def show_history(user_id: int, session_id: int) -> str:
         
     return json.dumps(history, ensure_ascii=False, indent=2)
 
+# API that deletes all chat history of a specific session
+def delete_session(session_id: int) -> None:
+    with _session() as s:
+        ch = s.get(ChatHistory, session_id)
+        s.delete(ch)
 
-
+        
 ## CLEANING UP TABLES IF NEEDED
 # db.execute("DROP TABLE IF EXISTS chat_history")
 # db.execute("DROP TABLE IF EXISTS chat_message")
@@ -236,9 +241,27 @@ def show_history(user_id: int, session_id: int) -> str:
 # print(my_sessionID)
 # print(my_arr)
 
-# add_message(1,'{"role":"assistant","content":"Hi"}')
+# add_message(my_sessionID,'{"role":"assistant","content":"Hi"}')
+
+# result = ch_table.query(
+#     filters={"id":my_sessionID}
+# ).to_list()
+# print(result)
+
 # result = cm_table.query(
-#     filters={"chat_history_id":1}
+#     filters={"chat_history_id":my_sessionID}
+# ).to_list()
+# print(result)
+
+# delete_session(my_sessionID)
+
+# result = ch_table.query(
+#     filters={"id":my_sessionID}
+# ).to_list()
+# print(result)
+
+# result = cm_table.query(
+#     filters={"chat_history_id":my_sessionID}
 # ).to_list()
 # print(result)
 
