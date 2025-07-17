@@ -15,28 +15,28 @@ load_dotenv()
 # Temorary Global Variables
 USER_ID = 0
 
-def delete_empty_untitled_chat():
+def delete_other_empty_untitled_chats():
     current = st.session_state.current_chat
-    if (
-        current is not None
-        and st.session_state.chat_names.get(current) == "Untitled Chat"
-        and len(st.session_state.chats.get(current, [])) == 0
-    ):
-        # Delete from backend
-        delete_session(current)
-        # Remove from session state
-        st.session_state.chats.pop(current, None)
-        st.session_state.chat_names.pop(current, None)
-        st.session_state.uploaded_chat_files.pop(current, None)
-        st.session_state.chat_name_updated.pop(current, None)
-        st.session_state.session_to_chat_id.pop(current, None)
-        if current in st.session_state.chat_order:
-            st.session_state.chat_order.remove(current)
-        # Update current chat after deletion
-        if st.session_state.chat_order:
-            st.session_state.current_chat = st.session_state.chat_order[0]
-        else:
-            st.session_state.current_chat = None
+    chats_to_delete = []
+
+    for cid in list(st.session_state.chats.keys()):
+        if (
+            cid != current and
+            st.session_state.chat_names.get(cid) == "Untitled Chat" and
+            len(st.session_state.chats.get(cid, [])) == 0
+        ):
+            chats_to_delete.append(cid)
+
+    for cid in chats_to_delete:
+        delete_session(cid)
+        st.session_state.chats.pop(cid, None)
+        st.session_state.chat_names.pop(cid, None)
+        st.session_state.uploaded_chat_files.pop(cid, None)
+        st.session_state.chat_name_updated.pop(cid, None)
+        st.session_state.session_to_chat_id.pop(cid, None)
+        if cid in st.session_state.chat_order:
+            st.session_state.chat_order.remove(cid)
+
 
 # --- Streamlit page setup ---
 st.set_page_config(page_title="Intramind", page_icon="💬")
@@ -103,7 +103,7 @@ if uploaded_global is not None:
 
 # --- Sidebar: New Chat Button ---
 if st.sidebar.button("➕ New Chat"):
-    delete_empty_untitled_chat()
+    delete_other_empty_untitled_chats()
 
 
     session_id, _ = create_session(USER_ID)
@@ -133,7 +133,7 @@ if not st.session_state.chat_order:
 chat_display_names = [st.session_state.chat_names[cid] for cid in st.session_state.chat_order]
 selected_chat_name = st.sidebar.radio("Select a chat:", chat_display_names)
 
-delete_empty_untitled_chat()
+delete_other_empty_untitled_chats()
 
 # --- Update Current Chat ---
 for cid, name_ in st.session_state.chat_names.items():
@@ -147,6 +147,25 @@ if st.sidebar.button("🧹 Clear Current Chat"):
     st.session_state.uploaded_chat_files[st.session_state.current_chat] = None
     st.session_state.chat_name_updated[st.session_state.current_chat] = False
     st.session_state.chat_names[st.session_state.current_chat] = "🕓 New Chat"
+
+# --- Sidebar: Delete Chat Button ---
+if st.sidebar.button("🗑 Delete Current Chat"):
+    current = st.session_state.current_chat
+    if current:
+        delete_session(current)
+        st.session_state.chats.pop(current, None)
+        st.session_state.chat_names.pop(current, None)
+        st.session_state.uploaded_chat_files.pop(current, None)
+        st.session_state.chat_name_updated.pop(current, None)
+        st.session_state.session_to_chat_id.pop(current, None)
+        if current in st.session_state.chat_order:
+            st.session_state.chat_order.remove(current)
+        if st.session_state.chat_order:
+            st.session_state.current_chat = st.session_state.chat_order[0]
+        else:
+            st.session_state.current_chat = None
+        st.rerun()
+
 
 # --- Chat UI ---
 current_chat_id = st.session_state.current_chat
