@@ -4,19 +4,39 @@ import time
 import os
 from dotenv import load_dotenv
 
+import json
+
 import sys
-from storage import upload_file, chat
+from storage import upload_file, chat, create_session, show_history, add_message, delete_session
 
 # Load environment variables
 load_dotenv()
 
-def serialize_chat(chat_id):
-    return {
-        "user_id": 0,
-        "chat_id": chat_id,
-        "messages": st.session_state.chats[chat_id]
-    }
+# Temorary Global Variables
+USER_ID = 0
 
+def delete_empty_untitled_chat():
+    current = st.session_state.current_chat
+    if (
+        current is not None
+        and st.session_state.chat_names.get(current) == "Untitled Chat"
+        and len(st.session_state.chats.get(current, [])) == 0
+    ):
+        # Delete from backend
+        delete_session(current)
+        # Remove from session state
+        st.session_state.chats.pop(current, None)
+        st.session_state.chat_names.pop(current, None)
+        st.session_state.uploaded_chat_files.pop(current, None)
+        st.session_state.chat_name_updated.pop(current, None)
+        st.session_state.session_to_chat_id.pop(current, None)
+        if current in st.session_state.chat_order:
+            st.session_state.chat_order.remove(current)
+        # Update current chat after deletion
+        if st.session_state.chat_order:
+            st.session_state.current_chat = st.session_state.chat_order[0]
+        else:
+            st.session_state.current_chat = None
 
 # --- Streamlit page setup ---
 st.set_page_config(page_title="Intramind", page_icon="💬")
@@ -24,13 +44,51 @@ st.title("Intramind Chatbot")
 
 # --- Session State Initialization ---
 if "chats" not in st.session_state:
+    new_session_id, all_session_ids = create_session(USER_ID)
+
     st.session_state.chats = {}
     st.session_state.chat_names = {}
     st.session_state.chat_order = []
-    st.session_state.current_chat = None
+    st.session_state.session_to_chat_id = {}  # new
+    st.session_state.chat_id_counter = 0      # new
+    st.session_state.current_chat = new_session_id
     st.session_state.uploaded_chat_files = {}
     st.session_state.model_name = "MyCustomGPT"
     st.session_state.chat_name_updated = {}
+
+    for session_id in all_session_ids:
+        history_json = show_history(USER_ID, session_id)
+        try:
+            history = json.loads(history_json)
+        except json.JSONDecodeError:
+            history = []
+
+        # Assign a simple display chat ID (e.g., 0, 1, 2)
+        chat_id = st.session_state.chat_id_counter
+        st.session_state.chat_id_counter += 1
+
+
+        if history:
+            first_user_msg = next((msg for msg in history if msg["role"] == "user"), None)
+            if first_user_msg:
+                words = first_user_msg["content"].strip().split()
+                name = " ".join(words[:5]) if words else f"Chat {chat_id}"
+            else:
+                name = f"Chat {chat_id}"
+        else:
+            name = f"Untitled Chat"
+
+        st.session_state.chats[session_id] = history
+        st.session_state.chat_names[session_id] = name 
+        st.session_state.session_to_chat_id[session_id] = chat_id
+
+        if session_id == new_session_id:
+            # insert new session at front
+            st.session_state.chat_order.insert(0, session_id)
+        else:
+            # append older sessions after
+            st.session_state.chat_order.append(session_id)
+
 
 # --- Sidebar: Upload Personal Data ---
 st.sidebar.title("🗂️ Chat Sessions")
@@ -45,13 +103,21 @@ if uploaded_global is not None:
 
 # --- Sidebar: New Chat Button ---
 if st.sidebar.button("➕ New Chat"):
-    chat_id = str(uuid.uuid4())
-    st.session_state.chats[chat_id] = []
-    st.session_state.chat_names[chat_id] = "🕓 New Chat"
-    st.session_state.chat_order.insert(0, chat_id)
-    st.session_state.current_chat = chat_id
-    st.session_state.uploaded_chat_files[chat_id] = None
-    st.session_state.chat_name_updated[chat_id] = False
+    delete_empty_untitled_chat()
+
+
+    session_id, _ = create_session(USER_ID)
+    chat_id = st.session_state.chat_id_counter  # display id
+    st.session_state.chat_id_counter += 1
+
+    st.session_state.chats[session_id] = []
+    st.session_state.chat_names[session_id] = f"Chat {chat_id}"
+    st.session_state.chat_order.insert(0, session_id)
+    st.session_state.current_chat = session_id
+    st.session_state.uploaded_chat_files[session_id] = None
+    st.session_state.chat_name_updated[session_id] = False
+    st.session_state.session_to_chat_id[session_id] = chat_id
+
 
 # --- Ensure at least one chat exists ---
 if not st.session_state.chat_order:
@@ -66,6 +132,8 @@ if not st.session_state.chat_order:
 # --- Sidebar: Select Chat ---
 chat_display_names = [st.session_state.chat_names[cid] for cid in st.session_state.chat_order]
 selected_chat_name = st.sidebar.radio("Select a chat:", chat_display_names)
+
+delete_empty_untitled_chat()
 
 # --- Update Current Chat ---
 for cid, name_ in st.session_state.chat_names.items():
@@ -88,19 +156,29 @@ st.subheader(st.session_state.chat_names[current_chat_id])
 for msg in st.session_state.chats[current_chat_id]:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        
 
 # --- Chat Input ---
 user_input = st.chat_input("Type your message here...")
 
-# --- Handle Chat Message ---
 if user_input:
-    st.session_state.chats[current_chat_id].append({
+    # Format message for both frontend and backend
+    user_msg = {
         "role": "user",
         "content": user_input
-    })
+    }
+
+    # Add to Streamlit chat history
+    st.session_state.chats[current_chat_id].append(user_msg)
+
+    # Save to backend
+    add_message(session_id=current_chat_id, messages=json.dumps(user_msg))
+
+    # Show user message in UI
     with st.chat_message("user"):
         st.markdown(user_input)
 
+    # Rename "🕓 New Chat" if needed
     if (
         st.session_state.chat_names[current_chat_id] == "🕓 New Chat"
         and not st.session_state.chat_name_updated.get(current_chat_id, False)
@@ -111,12 +189,21 @@ if user_input:
         st.session_state.chat_name_updated[current_chat_id] = True
         st.experimental_rerun()
 
+    # Get assistant response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             response = chat(user_id=0, MAX_CONTEXT_CHUNKS=10, str=user_input)
             st.markdown(response)
 
-    st.session_state.chats[current_chat_id].append({
+    # Format assistant response
+    assistant_msg = {
         "role": "assistant",
         "content": response
-    })
+    }
+
+    # Add to Streamlit chat history
+    st.session_state.chats[current_chat_id].append(assistant_msg)
+
+    # Save to backend
+    add_message(session_id=current_chat_id, messages=json.dumps(assistant_msg))
+
