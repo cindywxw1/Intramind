@@ -95,9 +95,17 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
 
     Please answer:"""
 
-    res = table.search(str).limit(MAX_CONTEXT_CHUNKS)
+    res = table.search(str).limit(MAX_CONTEXT_CHUNKS*3)
+    user_chunks = []
     if res:
-        text = [chunk.text for chunk in res.to_rows()]
+        for chunk in res.to_rows():
+            if chunk.user_id == user_id:
+                user_chunks.append(chunk)
+            if len(user_chunks) >= MAX_CONTEXT_CHUNKS:
+                break
+
+    if user_chunks:
+        text = [c.text for c in user_chunks]
         context = "\n".join(text)
         prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=str)
 
@@ -124,6 +132,10 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
 # result = chat(0,10,"What are the 3 caravan patents that Chenyang advanced?")
 # print(result)
 
+# result = chat(1,10,"What are the 3 caravan patents that Chenyang advanced?")
+# print(result)
+
+
 # table chat_history that stores the references to chat sessions of all users. Each row stores info of a session that chat_message represents
 class ChatHistory(TableModel, table=True):
     __tablename__ = "chat_history"
@@ -149,12 +161,14 @@ class Users(TableModel, table=True):
     __tablename__ = "users"
 
     id: int = Field(primary_key=True)
-    username: str
-    password: str
+    email: str = Field(unique=True, index=True)
+    username: str | None = Field(default=None, max_length=225)
 
-# create new tables ChatHistory/ChatMessage if they didn't exist
+
+# create new tables if they didn't exist
 ch_table = db.create_table(schema=ChatHistory, mode="exist_ok")
 cm_table = db.create_table(schema=ChatMessage, mode="exist_ok")
+user_table = db.create_table(schema=Users, mode="exist_ok")
 
 # API that reads user_id and creates a new session in table ChatHistory for the user. It returns the session_id of the new session just created and an int array of all session_ids of the user
 def create_session(user_id: int)->Tuple[int,List[int]]:
@@ -229,7 +243,35 @@ def delete_session(session_id: int) -> None:
         ch = s.get(ChatHistory, session_id)
         s.delete(ch)
 
-        
+# API that reads email and creates a new user. It returns the user_id of that user
+def create_user(email: str) -> int:
+    with _session() as s:
+        # Add & commit the new row
+        row = Users(email=email)
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+
+    return row.id
+
+# API that reads email and returns user_id of that user. If the output is -1, then that means the user does not exist
+def show_user(email: str) -> int:
+    with _session() as s:
+        # CLOSE any leftover cursor from previous DDL
+        s.connection().exec_driver_sql("")
+
+        user_id = s.execute(
+            select(Users.id).where(Users.email == email)
+        ).scalar_one_or_none()
+    return user_id if user_id is not None else -1
+
+# API that deletes a user from the table
+def delete_user(user_id: int) -> None:
+    with _session() as s:
+        ch = s.get(Users, user_id)
+        s.delete(ch)
+
+
 ## CLEANING UP TABLES IF NEEDED
 # db.execute("DROP TABLE IF EXISTS chat_history")
 # db.execute("DROP TABLE IF EXISTS chat_message")
