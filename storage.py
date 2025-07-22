@@ -170,29 +170,28 @@ ch_table = db.create_table(schema=ChatHistory, mode="exist_ok")
 cm_table = db.create_table(schema=ChatMessage, mode="exist_ok")
 user_table = db.create_table(schema=Users, mode="exist_ok")
 
-# API that reads user_id and creates a new session in table ChatHistory for the user. It returns the session_id of the new session just created and an int array of all session_ids of the user
-def create_session(user_id: int)->Tuple[int,List[int]]:
+# API that reads user_id and creates a new session in table ChatHistory for the user. It returns the session_id of the new session just created
+def create_session(user_id: int) -> int:
     with _session() as s:
         # Add & commit the new row
         row = ChatHistory(user_id=user_id)
         s.add(row)
         s.commit()
         s.refresh(row)
+    return row.id
 
-        # CLOSE any leftover cursor from previous DDL
-        s.connection().exec_driver_sql("")
-
+# API that reads user_id and returns an int array of all session_ids of the user
+def show_all_sessions (user_id: int) -> List[int]:
+    with _session() as s:
         # Run our own query and read *this* cursor
         result = s.execute(
             select(ChatHistory.id)
             .where(ChatHistory.user_id == user_id)
             .order_by(ChatHistory.id)
         )
-        
         # each r is a Row, r[0] = id
         ids = [int(r[0]) for r in result]
-
-    return row.id, ids
+    return ids
 
 # API that appends a single chat message to the designated session; messages would be a JSON string like '{"role":"user","content":"Hello"}' or '{"role":"assistant","content":"Hi"}'
 def add_message(session_id: int, messages: str)->None:
@@ -245,14 +244,16 @@ def delete_session(session_id: int) -> None:
 
 # API that reads email and creates a new user. It returns the user_id of that user
 def create_user(email: str) -> int:
-    with _session() as s:
-        # Add & commit the new row
-        row = Users(email=email)
-        s.add(row)
-        s.commit()
-        s.refresh(row)
-
-    return row.id
+    if (show_user(email)==-1):
+        with _session() as s:
+            # Add & commit the new row
+            row = Users(email=email)
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+        return row.id
+    else:
+        return show_user(email)
 
 # API that reads email and returns user_id of that user. If the output is -1, then that means the user does not exist
 def show_user(email: str) -> int:
