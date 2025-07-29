@@ -9,5 +9,3 @@ sqlalchemy
 litellm
 PyPDF2
 langchain_text_splitters
-
-Authlib
