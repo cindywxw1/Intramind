@@ -1,26 +1,18 @@
 import streamlit as st
-from streamlit import Page
 
-from storage import create_user
+doc_page = st.Page("src/doc_page.py", title = "Manage Uploaded Files")
+main_page = st.Page("src/main_page.py", title = "Chats")
+login_page = st.Page("src/login_page.py")
 
-from app_logic import login_screen, initialize_chat_state
 
 def main():
     if not st.user.is_logged_in:
-        login_screen()
+        pg = st.navigation([login_page])
     else:
-        st.set_page_config(page_title="Intramind", page_icon="💬")
-        
-        try:
-            user_id = create_user(st.user.email)
-            # Store user info in session state
-            st.session_state.user_id = user_id
-            st.session_state.user_name = st.user.name
-            st.session_state.user_email = st.user.email
-            
-            initialize_chat_state(user_id)
-        except Exception as e:
-            st.error(f"Error initializing application: {str(e)}")
+        pg = st.navigation([main_page, doc_page])
+    
+    pg.run()
+
 
 if __name__ == "__main__":
     main()

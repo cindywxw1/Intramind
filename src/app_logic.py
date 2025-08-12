@@ -1,15 +1,10 @@
 import streamlit as st
 import json
-from storage import (
+from src.storage import (
     upload_file, chat, create_session,
     show_all_sessions, show_history,
     add_message, delete_session,
 )
-
-def login_screen():
-    st.header("This app is private.")
-    st.subheader("Please log in.")
-    st.button("Log in with Google", on_click=st.login)
 
 def new_chat_page():
     """Page function for new chat"""
