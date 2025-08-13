@@ -54,12 +54,12 @@ class Document(TableModel, table=True):
     user_id: int| None = Field(nullable=True)
     document_name: str = Field(sa_type=Text)
 
-doc_table = db.create_table(schema=Document, mode="exist_ok")
+doc_table = db.create_table(schema=Document, if_exists='skip')
 
 # create table Chunk (our knowledge base) if it doesn't exist
 from pytidb.table import Table
 if db.query("SHOW TABLES LIKE 'chunks'"):
-    chunk_table = db.create_table(schema=Chunk, mode="exist_ok")
+    chunk_table = db.create_table(schema=Chunk, if_exists='skip')
 else:
     chunk_table = db.create_table(schema=Chunk)
 
@@ -235,9 +235,9 @@ class Users(TableModel, table=True):
     username: str | None = Field(default=None, max_length=225)
 
 # create new tables if they didn't exist
-ch_table = db.create_table(schema=ChatHistory, mode="exist_ok")
-cm_table = db.create_table(schema=ChatMessage, mode="exist_ok")
-user_table = db.create_table(schema=Users, mode="exist_ok")
+ch_table = db.create_table(schema=ChatHistory, if_exists='skip')
+cm_table = db.create_table(schema=ChatMessage, if_exists='skip')
+user_table = db.create_table(schema=Users, if_exists='skip')
 
 # API that reads user_id and creates a new session in table ChatHistory for the user. It returns the session_id of the new session just created
 def create_session(user_id: int) -> int:
