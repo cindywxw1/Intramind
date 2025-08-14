@@ -5,19 +5,17 @@
 * Use Streamlit as web ui
 
 ## Prerequisites
-* Python 3.8+
-* Open AI
-* TiDB server connection string, either local or TiDB Cloud
+* Python 3.10+
+* A TiDB Cloud Serverless cluster: Create a free cluster here: tidbcloud.com
+* OpenAI API key: Go to Open AI to get your own API key
+* Google Auth: Create a web application in Google Cloud Console (https://docs.streamlit.io/develop/tutorials/authentication/google)
 
 ## How to run
-
-**Step0**: 
 
 **Step1**: Clone the repo
 
 ```bash
-git clone https://github.com/pingcap/pytidb.git
-cd pytidb/examples/rag/;
+git clone https://github.com/cindywxw1/Intramind.git
 ```
 
 **Step2**: Install the required packages and setup environment
@@ -25,22 +23,17 @@ cd pytidb/examples/rag/;
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r reqs.txt
+pip install -r requirements.txt
 ```
 
 **Step3**: Set up environment to connect to storage
-If you are using TiDB Cloud, you'd better set up the environment variable `DATABASE_URL` to connect to the TiDB Cloud database. You can find the connection string in the [TiDB Cloud console](https://tidbcloud.com/).
+
+As you are using a local TiDB server, you can set up the environment variable like this:
+(You can also referense)
 
 ```bash
 cat > .env <<EOF
-DATABASE_URL="mysql+pymysql://<username>:<password>@<host>:4000/test?ssl_verify_cert=true&ssl_verify_identity=true"
-EOF
-```
-
-If you are using a local TiDB server, you can set up the environment variable like this:
-
-```bash
-cat > .env <<EOF
+OPENAI_API_KEY=
 TIDB_HOST=localhost
 TIDB_PORT=4000
 TIDB_USERNAME=root
@@ -49,10 +42,23 @@ TIDB_DATABASE=test
 EOF
 ```
 
-**Step4**: Run the Streamlit app
+**Step4**: Set up Google Auth Platform info
 
 ```bash
-streamlit run main.py
+cat > .streamlit/secrets.toml <<EOF
+[auth]
+redirect_uri = "http://localhost:8501/oauth2callback"
+cookie_secret = 
+client_id =
+client_secret =
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+EOF
 ```
 
-**Step5**: open the browser and visit `http://localhost:8501`
+**Step5**: Run the Streamlit app
+
+```bash
+streamlit run src/app.py
+```
+
+**Step6**: open the browser and visit `http://localhost:8501`
