@@ -1,6 +1,6 @@
 import streamlit as st
-from src.app_logic import initialize_chat_state
-from src.storage import create_user
+from ui import initialize_chat_state
+from utils import create_user
 
 st.set_page_config(page_title="Intramind", page_icon="💬")    
 user_id = create_user(st.user.email)

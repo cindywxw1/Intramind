@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 
-from src.storage import list_file_names, delete_file, create_user
+from utils import list_file_names, delete_file, create_user
 
 user_id = create_user(st.user.email)
 

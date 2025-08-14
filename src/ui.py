@@ -1,6 +1,6 @@
 import streamlit as st
 import json
-from src.storage import (
+from utils import (
     upload_file, chat, create_session,
     show_all_sessions, show_history,
     add_message, delete_session,

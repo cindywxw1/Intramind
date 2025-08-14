@@ -1,8 +1,8 @@
 import streamlit as st
 
-doc_page = st.Page("src/doc_page.py", title = "Manage Uploaded Files")
-main_page = st.Page("src/main_page.py", title = "Chats")
-login_page = st.Page("src/login_page.py")
+doc_page = st.Page("page_files/doc_page.py", title = "Manage Uploaded Files")
+main_page = st.Page("page_files/main_page.py", title = "Chats")
+login_page = st.Page("page_files/login_page.py")
 
 
 def main():
@@ -10,9 +10,7 @@ def main():
         pg = st.navigation([login_page])
     else:
         pg = st.navigation([main_page, doc_page])
-    
     pg.run()
-
 
 if __name__ == "__main__":
     main()

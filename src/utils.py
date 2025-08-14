@@ -1,15 +1,18 @@
 import os, io, json
 from typing import Optional, Any, Tuple, List
-from datetime import datetime
-from sqlalchemy import Text, select, Column, DateTime, text, update, desc
+from sqlalchemy import Text, select
 
 import dotenv
 import openai
 from litellm import completion
 from pytidb import TiDBClient
-from pytidb.schema import TableModel, Field
+
 from pytidb.embeddings import EmbeddingFunction
+
+from sqlalchemy import select, text, update, desc
 import PyPDF2
+
+from src.models import Chunk, Document, ChatHistory, ChatMessage, Users 
 
 # prepare environment
 dotenv.load_dotenv(override=True)
@@ -29,24 +32,14 @@ _session=db.session
 text_embed = EmbeddingFunction("openai/text-embedding-3-small")
 llm_model = "gpt-4o-mini"
 
-# Define the Chunk table
-class Chunk(TableModel, table=True):
-    __tablename__ = "chunks"
-    __table_args__ = {"extend_existing": True}
+# create new tables if they didn't exist
+chunk_table = db.create_table(schema=Chunk, if_exists='skip')
 
-    id: int = Field(primary_key=True)
-    user_id: int| None = Field(nullable=True)  # user_id is allowed to be null for now
-    text: str = Field(sa_type=Text)
-    text_vec: Optional[Any] = text_embed.VectorField(
-        source_field="text",
-    )
+doc_table = db.create_table(schema=Document, if_exists='skip')
+ch_table = db.create_table(schema=ChatHistory, if_exists='skip')
+cm_table = db.create_table(schema=ChatMessage, if_exists='skip')
+user_table = db.create_table(schema=Users, if_exists='skip')
 
-# create table Chunk (our knowledge base) if it doesn't exist
-from pytidb.table import Table
-if db.query("SHOW TABLES LIKE 'chunks'"):
-    table = db.create_table(schema=Chunk, mode="exist_ok")
-else:
-    table = db.create_table(schema=Chunk)
 
 sample_chunks = [
     "Llamas are camelids known for their soft fur and use as pack animals.",
@@ -57,9 +50,9 @@ sample_chunks = [
 ]
 
 # insert sample chunks if it's initially blank 
-if table.rows() == 0:
+if chunk_table.rows() == 0:
     chunks = [Chunk(user_id=0,text=t) for t in sample_chunks]
-    table.bulk_insert(chunks)
+    chunk_table.bulk_insert(chunks)
 
 # extract text from file (helper function): input a file path and return a text string
 def extract_text(file_path: str) -> str:
@@ -79,11 +72,50 @@ def upload_file(user_id: int, file: str) -> str:
         chunk_size=1000,
         chunk_overlap=100,
     )
+    document_name = os.path.basename(file)
 
     new_chunks=text_splitter.split_text(text)
-    rows = [Chunk(user_id=user_id,text=t) for t in new_chunks]
-    table.bulk_insert(rows)
-    return "Successful Upload!"
+
+    with _session() as s:
+        # 1. Insert into Document
+        document = Document(
+            user_id=user_id,
+            document_name=document_name
+        )
+        s.add(document)
+        s.flush()  # Generate document.id
+
+        # 2. Insert into Chunk linked to the Document
+        rows = [Chunk(text=t, document_id=document.id) for t in new_chunks]
+        s.add_all(rows)
+
+        s.commit()
+
+    return f"Successful upload of '{document_name}' with {len(new_chunks)} chunks!"
+
+def list_file_names(user_id: int) -> str:
+    with _session() as s:
+        result = s.execute(
+            select(Document.document_name)
+            .where(Document.user_id == user_id)
+            .where(Document.document_name != None)
+            .order_by(Document.document_name)
+        )
+        file_names = [r[0] for r in result]
+
+    return json.dumps({"files": file_names}, ensure_ascii=False, indent=2)
+
+def delete_file(user_id: int, file_name: str) -> None:
+    with _session() as s:
+        # Find the document row for this user and file
+        doc = s.query(Document).filter(
+            Document.user_id == user_id,
+            Document.document_name == file_name
+        ).first()
+
+        if doc:
+            s.delete(doc)
+            s.commit()
 
 # a chat api that allows users to ask a question about the knowledge base and get a more accurate answer by RAG-based AI chatbot
 def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
@@ -96,12 +128,14 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
 
     Please answer:"""
 
-    res = table.search(str).limit(MAX_CONTEXT_CHUNKS*3)
+    with _session() as s:
+        res = select(Chunk).join(Document, Chunk.document_id == Document.id).where(Document.user_id == user_id).limit(MAX_CONTEXT_CHUNKS*3)
+        chunks = s.execute(res).scalars().all()
+
     user_chunks = []
-    if res:
-        for chunk in res.to_rows():
-            if chunk.user_id == user_id:
-                user_chunks.append(chunk)
+    if len(chunks) != 0:
+        for chunk in chunks:
+            user_chunks.append(chunk)
             if len(user_chunks) >= MAX_CONTEXT_CHUNKS:
                 break
 
@@ -119,66 +153,6 @@ def chat(user_id: int, MAX_CONTEXT_CHUNKS: int, str: str) -> str:
     else:
         return "I'm sorry. No relevant information was found."
 
-# ## TO TEST DATABASE/TABLE CORRECTNESS
-# for i in range(1,table.rows()+1):
-#     print(table.get(i))
-
-## TO TEST UPLOAD API CORRECTNESS
-# test_str = upload_file(0,"/Users/york/Desktop/Resume.pdf")
-# print(test_str)
-# for i in range(1,table.rows()+1):
-#     print(table.get(i))
-
-## TO TEST CHAT API CORRECTNESS
-# result = chat(0,10,"What are the 3 caravan patents that Chenyang advanced?")
-# print(result)
-
-# result = chat(1,10,"What are the 3 caravan patents that Chenyang advanced?")
-# print(result)
-
-
-# table chat_history that stores the references to chat sessions of all users. Each row stores info of a session that chat_message represents
-class ChatHistory(TableModel, table=True):
-    __tablename__ = "chat_history"
-
-    id: int = Field(primary_key=True)
-    user_id: int
-    updated_at: datetime = Field(
-        sa_column=Column(
-            DateTime,
-            nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
-            server_onupdate=text("CURRENT_TIMESTAMP")
-        )
-    )
-
-# table chat_message is the sub-table of chat_history related by foreign key. Each row stores the message text, either a question asked by the user or the answer generated by the AI assistant
-class ChatMessage(TableModel, table=True):
-    __tablename__ = "chat_message"
-
-    id: int = Field(primary_key=True)
-    chat_history_id: int = Field(
-        foreign_key="chat_history.id",
-        ondelete="CASCADE",
-        index=True
-    )
-    speaker_id: int
-    text: str = Field(sa_type=Text)
-
-# table user_chart stores info of users
-class Users(TableModel, table=True):
-    __tablename__ = "users"
-
-    id: int = Field(primary_key=True)
-    email: str = Field(unique=True, index=True)
-    username: str | None = Field(default=None, max_length=225)
-
-
-# create new tables if they didn't exist
-ch_table = db.create_table(schema=ChatHistory, mode="exist_ok")
-cm_table = db.create_table(schema=ChatMessage, mode="exist_ok")
-user_table = db.create_table(schema=Users, mode="exist_ok")
-
 # API that reads user_id and creates a new session in table ChatHistory for the user. It returns the session_id of the new session just created
 def create_session(user_id: int) -> int:
     with _session() as s:
@@ -190,7 +164,7 @@ def create_session(user_id: int) -> int:
     return row.id
 
 # API that reads user_id and returns an int array of all session_ids of the user, ordered by time last updated
-def sessions_by_time (user_id: int) -> List[int]:
+def show_all_sessions (user_id: int) -> List[int]:
     with _session() as s:
         s.connection().exec_driver_sql("")
         # Run our own query and read *this* cursor
@@ -198,19 +172,6 @@ def sessions_by_time (user_id: int) -> List[int]:
             select(ChatHistory.id)
             .where(ChatHistory.user_id == user_id)
             .order_by(desc(ChatHistory.updated_at), desc(ChatHistory.id))
-        )
-        # each r is a Row, r[0] = id
-        ids = [int(r[0]) for r in result]
-    return ids
-
-# API that reads user_id and returns an int array of all session_ids of the user
-def show_all_sessions (user_id: int) -> List[int]:
-    with _session() as s:
-        # Run our own query and read *this* cursor
-        result = s.execute(
-            select(ChatHistory.id)
-            .where(ChatHistory.user_id == user_id)
-            .order_by(ChatHistory.id)
         )
         # each r is a Row, r[0] = id
         ids = [int(r[0]) for r in result]
@@ -232,12 +193,13 @@ def add_message(session_id: int, messages: str)->None:
     
     speaker_id = 0 if role == "user" else 1
     cm_table.insert(ChatMessage(chat_history_id=session_id,speaker_id=speaker_id,text=content))
-
+    
     with _session() as s:
         s.execute(
             update(ChatHistory).where(ChatHistory.id==session_id).values(updated_at=text("CURRENT_TIMESTAMP"))
         )
         s.commit()
+
 
 # API that shows chat history for a single chat session of a given user
 def show_history(user_id: int, session_id: int) -> str:
@@ -300,41 +262,3 @@ def delete_user(user_id: int) -> None:
     with _session() as s:
         ch = s.get(Users, user_id)
         s.delete(ch)
-
-
-## CLEANING UP TABLES IF NEEDED
-# db.execute("DROP TABLE IF EXISTS chat_history")
-# db.execute("DROP TABLE IF EXISTS chat_message")
-
-
-## TESTS FOR FUNCTIONALITY CORRECTNESS
-
-# my_sessionID, my_arr = create_session(1)
-# print(my_sessionID)
-# print(my_arr)
-
-# add_message(my_sessionID,'{"role":"assistant","content":"Hi"}')
-
-# result = ch_table.query(
-#     filters={"id":my_sessionID}
-# ).to_list()
-# print(result)
-
-# result = cm_table.query(
-#     filters={"chat_history_id":my_sessionID}
-# ).to_list()
-# print(result)
-
-# delete_session(my_sessionID)
-
-# result = ch_table.query(
-#     filters={"id":my_sessionID}
-# ).to_list()
-# print(result)
-
-# result = cm_table.query(
-#     filters={"chat_history_id":my_sessionID}
-# ).to_list()
-# print(result)
-
-# print(show_history(1,1))
