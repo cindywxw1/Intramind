@@ -1,5 +1,6 @@
 # Intramind 
 
+* An RAG-Driven AI Chatbot that allows users to manage a private knowledge base by feeding private files, therefore obtaining more accurate, reliable, and secure answers about any private fields that simple LLMs cannot answer
 * Use `pytidb` to connect to TiDB
 * Use `openai` to deploy embedding model and response generation
 * Use Streamlit as web ui
@@ -62,3 +63,4 @@ streamlit run src/app.py
 ```
 
 **Step6**: open the browser and visit `http://localhost:8501`
+
